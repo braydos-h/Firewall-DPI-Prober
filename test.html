@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Firewall & DPI Prober — Deep Tests, Heatmap, ETA</title>
+<style>
+  :root{
+    --bg:#070a12; --panel:rgba(255,255,255,.06); --panel-2:rgba(255,255,255,.08);
+    --muted:#9aa4b2; --text:#e8edf2; --brand:#7c62ff; --brand-2:#00e0ff;
+    --ok:#27d17f; --warn:#ffcc00; --bad:#ff5d5d; --ink:#0d1117;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0; color:var(--text);
+    font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Inter, "Helvetica Neue", Arial;
+    background:
+      radial-gradient(1200px 900px at 10% -10%, rgba(124,98,255,.22), transparent 60%),
+      radial-gradient(900px 900px at 110% 10%, rgba(0,224,255,.18), transparent 60%),
+      linear-gradient(180deg, #0a0d14 0%, #0b0e16 100%);
+  }
+  header{padding:26px 20px 6px;text-align:center}
+  .title{font-size:clamp(24px,3vw,44px);line-height:1.05;font-weight:900;letter-spacing:.2px;display:inline-block;
+    background:linear-gradient(90deg,var(--brand),var(--brand-2));-webkit-background-clip:text;background-clip:text;color:transparent;
+    filter:drop-shadow(0 6px 20px rgba(124,98,255,.25))}
+  .subtitle{margin-top:8px;color:var(--muted);font-size:14px}
+  .toolbar{margin:14px auto 14px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+  button{appearance:none;border:none;cursor:pointer;background:linear-gradient(180deg,rgba(255,255,255,.14),rgba(255,255,255,.06));
+    color:var(--text);padding:10px 14px;border-radius:14px;backdrop-filter:blur(8px);
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,.08),0 10px 30px rgba(0,0,0,.35);
+    transition:transform .08s ease,box-shadow .2s ease,background .2s ease;font-weight:700;letter-spacing:.2px}
+  button:hover{transform:translateY(-1px);box-shadow:inset 0 0 0 1px rgba(255,255,255,.12),0 12px 34px rgba(0,0,0,.45)}
+  button:active{transform:translateY(0)}
+  .secondary{background:var(--panel)}
+
+  /* Progress */
+  .progressWrap{width:min(1200px,96%);margin:6px auto 10px}
+  .progressBar{height:14px;border-radius:14px;background:rgba(255,255,255,.08);position:relative;overflow:hidden;border:1px solid rgba(255,255,255,.12)}
+  .progressFill{position:absolute;left:0;top:0;bottom:0;width:0%;border-radius:14px;background:linear-gradient(90deg,var(--brand),var(--brand-2));
+    box-shadow:0 0 20px rgba(124,98,255,.35)}
+  .progressInfo{display:flex;justify-content:space-between;align-items:center;color:var(--muted);font-size:12px;margin-top:6px}
+
+  .grid{width:min(1200px,96%);margin:10px auto 80px;display:grid;grid-template-columns:repeat(12,1fr);gap:14px}
+  .card{grid-column:span 12;background:var(--panel);border-radius:18px;padding:16px;
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,.07),0 20px 50px rgba(0,0,0,.35)}
+  @media(min-width:980px){.half{grid-column:span 6}.third{grid-column:span 4}.two{grid-column:span 8}.one{grid-column:span 4}}
+  .card h3{margin:0 0 8px 0;font-size:16px;letter-spacing:.3px}
+  .hint{color:var(--muted);font-size:12px}
+  .tests{display:grid;gap:10px}
+  .row{background:var(--panel-2);border-radius:12px;padding:12px;display:flex;align-items:center;gap:10px;
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,.05)}
+  .name{flex:1;font-weight:600}
+  .cat{font-size:11px;color:var(--muted);margin-left:6px}
+  .status{font-weight:800;font-size:12px;padding:6px 8px;border-radius:10px;min-width:112px;text-align:center}
+  .s-ok{background:rgba(39,209,127,.14);color:var(--ok);border:1px solid rgba(39,209,127,.35)}
+  .s-bad{background:rgba(255,93,93,.14);color:var(--bad);border:1px solid rgba(255,93,93,.35)}
+  .s-warn{background:rgba(255,204,0,.14);color:var(--warn);border:1px solid rgba(255,204,0,.35)}
+  .s-run{background:rgba(124,98,255,.14);color:var(--brand);border:1px solid rgba(124,98,255,.35)}
+  .mono{font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;font-size:12px}
+  .small{font-size:12px;color:var(--muted)}
+  .dot{width:10px;height:10px;border-radius:50%}
+  .dot.ok{background:var(--ok)} .dot.bad{background:var(--bad)} .dot.warn{background:var(--warn)} .dot.run{background:var(--brand)}
+  .log{background:#07090f;border-radius:12px;padding:10px;max-height:320px;overflow:auto;border:1px solid rgba(255,255,255,.08)}
+
+  /* Score / dial */
+  .scoreBox{display:flex;align-items:center;gap:12px;margin-top:8px}
+  .scoreDial{width:84px;height:84px;border-radius:50%;display:grid;place-items:center;font-weight:900;
+    background:conic-gradient(var(--ok) 0deg, var(--ok) 0deg, rgba(255,255,255,.08) 0deg)}
+  .scoreDial span{filter:drop-shadow(0 2px 8px rgba(0,0,0,.5))}
+  .pill{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;background:rgba(0,0,0,.25);
+    border:1px solid rgba(255,255,255,.08);font-size:12px}
+
+  /* Heatmap */
+  .heatmap{display:grid;gap:6px;grid-template-columns:repeat(auto-fill, minmax(18px, 1fr));
+    background:rgba(255,255,255,.06);padding:10px;border-radius:12px;border:1px solid rgba(255,255,255,.08)}
+  .cell{width:100%;aspect-ratio:1/1;border-radius:4px;border:1px solid rgba(255,255,255,.1);position:relative}
+  .c-ok{background:rgba(39,209,127,.7)} .c-warn{background:rgba(255,204,0,.75)} .c-bad{background:rgba(255,93,93,.7)} .c-run{background:rgba(124,98,255,.65)}
+  .cell:hover::after{content:attr(data-tip);position:absolute;left:50%;top:-8px;transform:translate(-50%,-100%);
+    background:#0b0e16;color:#e8edf2;padding:6px 8px;border-radius:8px;border:1px solid rgba(255,255,255,.12);font-size:11px;white-space:nowrap;z-index:2}
+  .legend{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px}
+  .legend .swatch{width:14px;height:14px;border-radius:4px;border:1px solid rgba(255,255,255,.14)}
+
+  .footer{text-align:center;color:var(--muted);font-size:12px;padding:20px}
+</style>
+</head>
+<body>
+<header>
+  <div class="title">Firewall & DPI Prober</div>
+  <div class="subtitle">Deep client‑side diagnostics: category blocks, VPN/proxy reachability, DoH, WebSocket, STUN/UDP, HTTP/3/ECH, Mullvad checks, circumvention endpoints (V2Ray, Shadowsocks, Tor bridges/Snowflake), heatmap, speed test, and more.</div>
+  <div class="toolbar">
+    <button id="runDeep">Re‑run deep test</button>
+    <button id="runSpeed">Speed test (10s)</button>
+    <button id="export">Export JSON report</button>
+    <button class="secondary" id="copyLog">Copy full log</button>
+  </div>
+</header>
+
+<div class="progressWrap">
+  <div class="progressBar"><div class="progressFill" id="progressFill"></div></div>
+  <div class="progressInfo"><div id="progressText">Starting…</div><div id="etaText">ETA —</div></div>
+</div>
+
+<main class="grid">
+  <section class="card third">
+    <h3>Connectivity & DPI Signals</h3>
+    <div class="hint">DoH, WebSocket echo, STUN (UDP), HTTP/3 & ECH (Cloudflare trace).</div>
+    <div class="tests" id="connectivity"></div>
+  </section>
+
+  <section class="card third">
+    <h3>Identity & IP</h3>
+    <div class="hint">Public IPv4/IPv6, STUN reflexive IP, org/ASN, Mullvad status.</div>
+    <div class="tests" id="identity"></div>
+  </section>
+
+  <section class="card third">
+    <h3>Score & Feasibility</h3>
+    <div class="hint">Higher score = stronger filtering. Heuristic only — no bypass steps provided.</div>
+    <div class="scoreBox">
+      <div class="scoreDial" id="scoreDial"><span id="scoreNum">0</span></div>
+      <div>
+        <div class="pill" id="feasibility">Feasibility: —</div>
+        <div class="small" id="scoreExplain">Run started…</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card two">
+    <h3>Heatmap</h3>
+    <div class="hint">Each square is a test. Green = PASS, Yellow = INCONCLUSIVE, Red = BLOCKED, Purple = RUNNING. Hover for details.</div>
+    <div class="heatmap" id="heatmap"></div>
+    <div class="legend">
+      <div class="swatch" style="background:rgba(39,209,127,.7)"></div><span class="small">PASS</span>
+      <div class="swatch" style="background:rgba(255,204,0,.75)"></div><span class="small">INCONCLUSIVE</span>
+      <div class="swatch" style="background:rgba(255,93,93,.7)"></div><span class="small">BLOCKED</span>
+      <div class="swatch" style="background:rgba(124,98,255,.65)"></div><span class="small">RUNNING</span>
+    </div>
+  </section>
+
+  <section class="card third">
+    <h3>Category Blocks (favicons)</h3>
+    <div class="hint">Safe image pings to favicons—no site content fetched.</div>
+    <div class="tests" id="categories"></div>
+    <div class="input-wrap">
+      <input id="customHost" type="text" placeholder="Add a hostname to test (e.g., example.com)" />
+      <button id="addHost">Add host</button>
+    </div>
+  </section>
+
+  <section class="card third">
+    <h3>VPN/Proxy Site Reachability</h3>
+    <div class="hint">If these are blocked, circumvention tools are likely restricted.</div>
+    <div class="tests" id="vpn"></div>
+  </section>
+
+  <section class="card third">
+    <h3>Mullvad Endpoints</h3>
+    <div class="hint">API/diagnostic reachability & JSON probe.</div>
+    <div class="tests" id="mullvad"></div>
+  </section>
+
+  <section class="card third">
+    <h3>Circumvention Endpoints</h3>
+    <div class="hint">V2Ray/V2Fly, Shadowsocks, Psiphon, Lantern, Tor bridges/Snowflake, Outline.</div>
+    <div class="tests" id="circum"></div>
+  </section>
+
+  <section class="card half">
+    <h3>Keyword Filtering (URL terms)</h3>
+    <div class="hint">Probes httpbin with specific words in query params.</div>
+    <div class="tests" id="keywords"></div>
+  </section>
+
+  <section class="card half">
+    <h3>Speed Test (WebSocket echo)</h3>
+    <div class="hint">Bi-directional throughput, ping & jitter via secure echo. Indicative only.</div>
+    <div class="tests" id="speed"></div>
+  </section>
+
+  <section class="card">
+    <h3>Details & Debug Log</h3>
+    <div class="hint">Interprets ambiguous results (CORS, site throttling, etc.).</div>
+    <pre class="log mono" id="log"></pre>
+  </section>
+
+  <section class="card">
+    <h3>Notes</h3>
+    <div class="hint">
+      <ul>
+        <li>SSL/TLS interception detection is limited in browsers. Use the browser’s certificate viewer for certainty.</li>
+        <li>Results are heuristic; some failures are normal due to CORS, mixed content, or site/CDN throttling.</li>
+        <li>Respect your organization’s policies. This tool provides visibility only and does not include circumvention steps.</li>
+      </ul>
+    </div>
+  </section>
+</main>
+
+<div class="footer">This tool makes metadata requests (favicons, JSON, echo, STUN). It doesn’t fetch or display site content.</div>
+
+<script>
+(function(){
+  // ---------- Shortcuts ----------
+  const $ = (s)=>document.querySelector(s);
+  const elConn = $('#connectivity'), elId = $('#identity'), elCat = $('#categories'), elVPN = $('#vpn'), elKW = $('#keywords');
+  const elLog = $('#log'), elSpeed = $('#speed'), elMullvad = $('#mullvad'), elCircum = $('#circum');
+  const elScoreDial = $('#scoreDial'), elScoreNum = $('#scoreNum'), elFeas = $('#feasibility'), elScoreExplain = $('#scoreExplain');
+  const elHeat = $('#heatmap');
+  const elPF = $('#progressFill'), elPT = $('#progressText'), elETA = $('#etaText');
+
+  // ---------- Logging ----------
+  const log = (...args) => {
+    const line = args.map(a => { try { return typeof a === 'string' ? a : JSON.stringify(a); } catch { return String(a); } }).join(' ');
+    elLog.textContent += `[${new Date().toISOString()}] ${line}\n`;
+    elLog.scrollTop = elLog.scrollHeight;
+  };
+
+  const sleep = (ms)=>new Promise(r=>setTimeout(r,ms));
+
+  // ---------- Helpers ----------
+  function imagePing(url, timeout=8000){
+    return new Promise(res=>{
+      const img = new Image(); let done=false; const t0=performance.now();
+      const timer=setTimeout(()=>{ if(done) return; done=true; img.src=''; res({ok:false,error:'timeout',ms:performance.now()-t0,url}); }, timeout);
+      img.onload=()=>{ if(done) return; done=true; clearTimeout(timer); res({ok:true,ms:performance.now()-t0,url}); };
+      img.onerror=()=>{ if(done) return; done=true; clearTimeout(timer); res({ok:false,error:'blocked-or-error',ms:performance.now()-t0,url}); };
+      img.referrerPolicy='no-referrer';
+      img.src = url + (url.includes('?')?'&':'?') + 'cb=' + Math.random();
+    });
+  }
+
+  async function dohResolve(host){
+    const url = `https://dns.google/resolve?name=${encodeURIComponent(host)}&type=A`;
+    const t0 = performance.now();
+    try{
+      const r = await fetch(url, {headers:{'Accept':'application/dns-json'}, cache:'no-store'});
+      const j = await r.json();
+      const ok = j && j.Status === 0 && Array.isArray(j.Answer) && j.Answer.length>0;
+      return {ok, data:j, ms:performance.now()-t0, url};
+    }catch(e){ return {ok:false, error:String(e), ms:performance.now()-t0, url}; }
+  }
+
+  async function websocketEcho(url='wss://echo.websocket.events', timeout=8000){
+    return new Promise(resolve=>{
+      const t0 = performance.now(); let closed=false; let timer=null;
+      try{
+        const ws = new WebSocket(url);
+        ws.onopen = ()=>{ ws.send('ping'); timer=setTimeout(()=>{ if(closed) return; closed=true; ws.close(); resolve({ok:false,error:'timeout',ms:performance.now()-t0,url}); }, timeout); };
+        ws.onmessage = ()=>{ if(closed) return; closed=true; clearTimeout(timer); try{ws.close();}catch{} resolve({ok:true,ms:performance.now()-t0,url}); };
+        ws.onerror = ()=>{ if(closed) return; closed=true; clearTimeout(timer); resolve({ok:false,error:'websocket-error',ms:performance.now()-t0,url}); };
+      }catch(e){ resolve({ok:false,error:String(e),ms:performance.now()-t0,url}); }
+    });
+  }
+
+  async function stunUdpTest(){
+    const t0 = performance.now();
+    return new Promise(async (resolve)=>{
+      try{
+        const pc = new RTCPeerConnection({ iceServers:[ {urls:['stun:stun.l.google.com:19302','stun:stun.cloudflare.com:3478']} ] });
+        const results = {host:false, srflx:false, relay:false, candidates:[], ips:new Set(), ms:0};
+        pc.createDataChannel("t");
+        pc.onicecandidate = (ev)=>{
+          if(ev.candidate){
+            const c = ev.candidate.candidate || '';
+            results.candidates.push(c);
+            if (c.includes(' typ host ')) results.host = true;
+            if (c.includes(' typ srflx ')) results.srflx = true;
+            if (c.includes(' typ relay ')) results.relay = true;
+            const m = c.match(/ ([0-9]{1,3}(?:\.[0-9]{1,3}){3}) /); if(m) results.ips.add(m[1]);
+          }else{ results.ms = performance.now()-t0; pc.close(); resolve({ok:(results.srflx||results.relay||results.host), ...results}); }
+        };
+        const offer = await pc.createOffer(); await pc.setLocalDescription(offer);
+        setTimeout(()=>{ try{pc.close();}catch{} results.ms=performance.now()-t0; resolve({ok:(results.srflx||results.relay||results.host), ...results, timeout:true}); }, 10000);
+      }catch(e){ resolve({ok:false,error:String(e),ms:performance.now()-t0}); }
+    });
+  }
+
+  async function keywordFilterProbe(word){
+    const base = 'https://httpbin.org/get'; const t0 = performance.now();
+    try{ const r = await fetch(`${base}?q=${encodeURIComponent(word)}`, {cache:'no-store'}); const j = await r.json(); return {ok:true, ms:performance.now()-t0, url:base, echo:(j && j.args)}; }
+    catch(e){ return {ok:false, error:String(e), ms:performance.now()-t0, url:base}; }
+  }
+
+  async function cfTrace(){
+    const t0 = performance.now();
+    try{ const r = await fetch('https://www.cloudflare.com/cdn-cgi/trace', {cache:'no-store'}); const txt = await r.text(); const map = {}; txt.trim().split('\n').forEach(l=>{ const [k,v]=l.split('='); if(k) map[k]=v; }); return {ok:true, ms:performance.now()-t0, map}; }
+    catch(e){ return {ok:false, error:String(e), ms:performance.now()-t0}; }
+  }
+
+  async function fetchJSON(url){
+    const t0 = performance.now();
+    try{ const r = await fetch(url, {cache:'no-store'}); const j = await r.json(); return {ok:true, data:j, ms:performance.now()-t0, url}; }
+    catch(e){ return {ok:false, error:String(e), ms:performance.now()-t0, url}; }
+  }
+
+  async function speedTestWS({durationMs=10000, frameBytes=32768}={}){
+    return new Promise(resolve=>{
+      let sent=0, recv=0, pings=[], lastPing=null, opened=false;
+      const ws = new WebSocket('wss://echo.websocket.events'); ws.binaryType='arraybuffer';
+      let sender=null, pingTimer=null; const t0=performance.now(); let stopTimer=null;
+      const finish = (reason)=>{ try{ if(sender) clearInterval(sender); if(pingTimer) clearInterval(pingTimer); if(stopTimer) clearTimeout(stopTimer); ws.close(); }catch{}
+        const dur = (performance.now()-t0)/1000; const rtt = pings.length ? pings.reduce((a,b)=>a+b,0)/pings.length : null;
+        const jitter = pings.length>1 ? Math.sqrt(pings.map(x=>Math.pow(x - rtt,2)).reduce((a,b)=>a+b,0)/(pings.length-1)) : null;
+        resolve({ok:opened, duration:dur, bytesUp:sent, bytesDown:recv, rttMs:rtt?Math.round(rtt):null, jitterMs:jitter?Math.round(jitter):null, reason}); };
+      ws.onopen=()=>{ opened=true; const payload = new Uint8Array(frameBytes); payload.fill(7); sender = setInterval(()=>{ try{ ws.send(payload); sent += payload.byteLength; }catch{} }, 0);
+        pingTimer = setInterval(()=>{ lastPing = performance.now(); try{ ws.send('p'); }catch{} }, 1000);
+        stopTimer = setTimeout(()=>finish('done'), durationMs); };
+      ws.onmessage=(e)=>{ if(typeof e.data === 'string'){ if(lastPing){ pings.push(performance.now()-lastPing); lastPing=null; } } else if(e.data instanceof ArrayBuffer){ recv += e.data.byteLength; } else if(e.data instanceof Blob){ recv += e.data.size; } };
+      ws.onerror=()=>finish('ws-error'); ws.onclose=()=>finish('closed');
+    });
+  }
+
+  // ---------- Inventories ----------
+  const categoryHosts = [
+    {name:'Pornhub', host:'www.pornhub.com', cat:'Adult'},
+    {name:'Bet365', host:'www.bet365.com', cat:'Gambling'},
+    {name:'TikTok', host:'www.tiktok.com', cat:'Social'},
+    {name:'Discord', host:'discord.com', cat:'Chat'},
+    {name:'Reddit', host:'www.reddit.com', cat:'Social'},
+    {name:'YouTube', host:'www.youtube.com', cat:'Streaming'},
+    {name:'Steam', host:'store.steampowered.com', cat:'Gaming'},
+    {name:'Roblox', host:'www.roblox.com', cat:'Gaming'},
+    {name:'Epic Games', host:'store.epicgames.com', cat:'Gaming'},
+    {name:'GitHub', host:'github.com', cat:'Developer'}
+  ];
+  const vpnHosts = [
+    {name:'Proton VPN', host:'protonvpn.com'},
+    {name:'NordVPN', host:'nordvpn.com'},
+    {name:'ExpressVPN', host:'www.expressvpn.com'},
+    {name:'OpenVPN', host:'openvpn.net'},
+    {name:'Tor Project', host:'www.torproject.org'},
+    {name:'Mullvad', host:'mullvad.net'}
+  ];
+  const mullvadEndpoints = [
+    {name:'Mullvad API', host:'api.mullvad.net'},
+    {name:'Mullvad “am I”', host:'am.i.mullvad.net'},
+    {name:'Mullvad DNS', host:'dns.mullvad.net'},
+    {name:'Mullvad main', host:'mullvad.net'}
+  ];
+  const circumEndpoints = [
+    {name:'V2Fly', host:'www.v2fly.org'},
+    {name:'V2Ray (legacy)', host:'www.v2ray.com'},
+    {name:'Shadowsocks', host:'shadowsocks.org'},
+    {name:'Outline', host:'getoutline.org'},
+    {name:'Psiphon', host:'psiphon.ca'},
+    {name:'Lantern', host:'lantern.io'},
+    {name:'Tor Bridges', host:'bridges.torproject.org'},
+    {name:'Tor Check', host:'check.torproject.org'},
+    {name:'Snowflake (site)', host:'snowflake.torproject.org'},
+    {name:'Snowflake Broker', host:'snowflake-broker.torproject.org'}
+  ];
+  const keywordList = ['control','proxy','vpn','gambling','adult','porn'];
+
+  // ---------- Heatmap ----------
+  const heat = { cells: {}, order: [] };
+  function heatCellId(group, key){ return `${group}:${key}`; }
+  function heatAdd(group, key, label){
+    const id = heatCellId(group,key); if(heat.cells[id]) return;
+    const cell = document.createElement('div'); cell.className='cell c-run'; cell.dataset.tip = `${group} — ${label}`; cell.id = `cell-${btoa(id)}`;
+    elHeat.appendChild(cell); heat.cells[id] = {el:cell, state:'run'}; heat.order.push(id);
+  }
+  function heatSet(group, key, state){ const id = heatCellId(group,key); const c = heat.cells[id]; if(!c) return; c.state = state; const el=c.el; el.className = `cell c-${state}`; }
+
+  // ---------- Metrics & Scoring ----------
+  const metrics = {}; let scoreTimer=null;
+  function setStatus(id, state, detail){
+    const el = document.getElementById(id); if(!el) return;
+    el.className = 'status ' + (state==='ok' ? 's-ok' : state==='bad' ? 's-bad' : state==='warn' ? 's-warn' : 's-run');
+    el.textContent = (state==='ok' ? 'PASS' : state==='bad' ? 'BLOCKED' : state==='warn' ? 'INCONCLUSIVE' : 'RUNNING') + (detail ? ` · ${detail}` : '');
+    const dot = el.parentElement.querySelector('.dot'); if(dot) dot.className = 'dot ' + (state==='ok' ? 'ok' : state==='bad' ? 'bad' : state==='warn' ? 'warn' : 'run');
+    metrics[id] = {state, detail}; scheduleScoreCompute();
+  }
+  function scheduleScoreCompute(){ if(scoreTimer) clearTimeout(scoreTimer); scoreTimer = setTimeout(computeScore, 250); }
+  function computeScore(){
+    let score = 0;
+    if(metrics['doh']?.state==='bad') score += 20; else if(metrics['doh']?.state==='ok') score -= 10;
+    if(metrics['ws']?.state==='bad') score += 10; else if(metrics['ws']?.state==='ok') score -= 5;
+    if(metrics['stun']?.state==='bad') score += 15; else if(metrics['stun']?.state==='ok' && metrics['stun']?.detail?.includes('UDP likely allowed')) score -= 10;
+    if(metrics['cf-http3']?.state==='ok') score -= 5;
+    const countBlocked = (prefix)=>Object.keys(metrics).filter(k=>k.startsWith(prefix)&&metrics[k].state==='bad').length;
+    score += Math.min(30, countBlocked('cat-')*5);
+    score += Math.min(25, countBlocked('vpn-')*5);
+    score += Math.min(25, countBlocked('mv-')*8);
+    score += Math.min(25, countBlocked('circ-')*5);
+    const kwBlocked = countBlocked('kw-'); if(kwBlocked>0) score += 10;
+    score = Math.max(0, Math.min(100, score));
+    const deg = Math.round(360*score/100);
+    const color = score>=70? 'var(--bad)' : score>=40 ? 'var(--warn)' : 'var(--ok)';
+    elScoreDial.style.background = `conic-gradient(${color} ${deg}deg, rgba(255,255,255,.08) ${deg}deg)`;
+    elScoreNum.textContent = score;
+    let feasible = '—';
+    const dohOK = metrics['doh']?.state==='ok';
+    const wsOK = metrics['ws']?.state==='ok';
+    const stunOK = (metrics['stun']?.state==='ok' || (metrics['stun']?.state==='warn' && metrics['stun']?.detail?.includes('host')));
+    const vpnOK = Object.keys(metrics).filter(k=>k.startsWith('vpn-') && metrics[k].state==='ok').length;
+    const mvOK  = Object.keys(metrics).filter(k=>k.startsWith('mv-') && metrics[k].state==='ok').length;
+    const circumOK  = Object.keys(metrics).filter(k=>k.startsWith('circ-') && metrics[k].state==='ok').length;
+    if(dohOK && wsOK && stunOK && (vpnOK>=3 || mvOK>=2 || circumOK>=3)) { feasible='Likely feasible'; }
+    else if(!dohOK || !stunOK) { feasible='Unlikely'; }
+    else { feasible='Unclear'; }
+    elFeas.textContent = `Feasibility: ${feasible}`;
+    elFeas.style.borderColor = (feasible==='Likely feasible') ? 'rgba(39,209,127,.35)' : (feasible==='Unlikely') ? 'rgba(255,93,93,.35)' : 'rgba(255,204,0,.35)';
+    elFeas.style.color = (feasible==='Likely feasible') ? 'var(--ok)' : (feasible==='Unlikely') ? 'var(--bad)' : 'var(--warn)';
+    elScoreExplain.textContent = 'Heuristic only. Respect local policies. No circumvention advice provided.';
+  }
+
+  // ---------- Progress / ETA ----------
+  const progress = { start:0, totalWeight:0, done:0 };
+  function progReset(total){ progress.start=performance.now(); progress.totalWeight=total; progress.done=0; progUpdate(); }
+  function progBump(w){ progress.done += w; progUpdate(); }
+  function progUpdate(){ const pct = progress.totalWeight? (100*progress.done/progress.totalWeight) : 0; elPF.style.width = pct.toFixed(1)+'%'; elPT.textContent = `Progress: ${pct.toFixed(0)}%`;
+    const elapsed = (performance.now()-progress.start)/1000; const frac = progress.totalWeight? (progress.done/progress.totalWeight) : 0;
+    const eta = frac>0 ? (elapsed*(1-frac)/frac) : null; elETA.textContent = eta? `ETA ${eta.toFixed(0)}s` : 'ETA —'; }
+
+  // ---------- UI builders ----------
+  function rowTemplate(id, leftLabel, rightLabel='', cat=''){ const row = document.createElement('div'); row.className='row'; row.innerHTML = `
+      <div class="dot run"></div>
+      <div class="name">${leftLabel} <span class="cat">${cat ? '· '+cat : ''}</span></div>
+      <div class="small">${rightLabel}</div>
+      <div class="status s-run" id="${id}">RUNNING</div>
+    `; return row; }
+
+  // ---------- Runners ----------
+  const state = { addedHosts: [], stunIPs:[], mullvadJSON:null, cfTrace:null };
+
+  async function runConnectivity(){
+    elConn.innerHTML='';
+    const items = [
+      {id:'doh', label:'DNS over HTTPS (Google)', w:1.2, fn: async ()=>{ const r = await dohResolve('example.com'); log('DoH example.com', r); if(r.ok) setStatus('doh','ok', `${Math.round(r.ms)} ms`); else setStatus('doh','bad','failed'); heatSet('Connectivity','DoH', r.ok?'ok':'bad'); }},
+      {id:'ws', label:'WebSocket Echo (443)', w:1.0, fn: async ()=>{ const r = await websocketEcho(); log('WebSocket echo', r); if(r.ok) setStatus('ws','ok', `${Math.round(r.ms)} ms`); else setStatus('ws','bad', r.error || 'failed'); heatSet('Connectivity','WebSocket', r.ok?'ok':'bad'); }},
+      {id:'stun', label:'STUN (UDP) reflexive candidate', w:1.4, fn: async ()=>{ const r = await stunUdpTest(); log('STUN result', r); if(r.srflx) setStatus('stun','ok','UDP likely allowed'); else if(r.host && !r.srflx && !r.relay) setStatus('stun','warn','No srflx (UDP/STUN blocked?)'); else if(r.relay) setStatus('stun','warn','TURN relay only'); else setStatus('stun','bad','failed'); state.stunIPs = Array.from(r.ips||[]); heatSet('Connectivity','STUN', r.srflx? 'ok' : (r.host||r.relay) ? 'warn' : 'bad'); }},
+      {id:'cf-http3', label:'HTTP/3 & ECH signal (Cloudflare trace)', w:1.0, fn: async ()=>{ const r = await cfTrace(); log('Cloudflare trace', r); if(!r.ok){ setStatus('cf-http3','warn','inconclusive'); heatSet('Connectivity','HTTP/3', 'warn'); return; } const h3 = r.map.http==='h3'; const sni = r.map.sni || 'unknown'; setStatus('cf-http3', h3?'ok':'warn', `${h3?'HTTP/3':'not h3'} · SNI: ${sni}`); state.cfTrace = r.map; heatSet('Connectivity','HTTP/3', h3?'ok':'warn'); }}
+    ];
+    // Heatmap cells for this group
+    heatAdd('Connectivity','DoH','DoH (Google)'); heatAdd('Connectivity','WebSocket','WebSocket Echo'); heatAdd('Connectivity','STUN','STUN UDP'); heatAdd('Connectivity','HTTP/3','HTTP/3/ECH');
+    for(const it of items){ elConn.appendChild(rowTemplate(it.id, it.label)); await sleep(50); await it.fn(); progBump(it.w); }
+  }
+
+  async function runCategories(hosts){
+    elCat.innerHTML='';
+    hosts.forEach(h=>{ const id = `cat-${h.host.replace(/[^a-z0-9]/gi,'_')}`; elCat.appendChild(rowTemplate(id, h.name, h.host, h.cat)); heatAdd('Categories', h.host, `${h.name}`); }); await sleep(60);
+    for(const h of hosts){ const id = `cat-${h.host.replace(/[^a-z0-9]/gi,'_')}`; const doh = await dohResolve(h.host); log('DoH', h.host, doh.ok?'OK':'FAIL', doh); let ping=null; if(doh.ok){ ping = await imagePing(`https://${h.host}/favicon.ico`); log('IMG', h.host, ping); }
+      if(!doh.ok){ setStatus(id,'bad','DNS failed'); heatSet('Categories', h.host, 'bad'); }
+      else if(ping && ping.ok){ setStatus(id,'ok', `${Math.round(ping.ms)} ms`); heatSet('Categories', h.host, 'ok'); }
+      else if(ping && !ping.ok){ setStatus(id,'bad','Network or blocked'); heatSet('Categories', h.host, 'bad'); }
+      else { setStatus(id,'warn','inconclusive'); heatSet('Categories', h.host, 'warn'); }
+      progBump(0.8);
+    }
+  }
+
+  async function runVPN(hosts){
+    elVPN.innerHTML='';
+    hosts.forEach(h=>{ const id = `vpn-${h.host.replace(/[^a-z0-9]/gi,'_')}`; elVPN.appendChild(rowTemplate(id, h.name, h.host, 'VPN/Proxy')); heatAdd('VPN/Proxy', h.host, `${h.name}`); }); await sleep(60);
+    for(const h of hosts){ const id = `vpn-${h.host.replace(/[^a-z0-9]/gi,'_')}`; const doh = await dohResolve(h.host); log('DoH (vpn)', h.host, doh.ok?'OK':'FAIL', doh); let ping=null; if(doh.ok){ ping = await imagePing(`https://${h.host}/favicon.ico`); log('IMG (vpn)', h.host, ping); }
+      if(!doh.ok){ setStatus(id,'bad','DNS failed'); heatSet('VPN/Proxy', h.host, 'bad'); }
+      else if(ping && ping.ok){ setStatus(id,'ok', `${Math.round(ping.ms)} ms`); heatSet('VPN/Proxy', h.host, 'ok'); }
+      else if(ping && !ping.ok){ setStatus(id,'bad','Network or blocked'); heatSet('VPN/Proxy', h.host, 'bad'); }
+      else { setStatus(id,'warn','inconclusive'); heatSet('VPN/Proxy', h.host, 'warn'); }
+      progBump(0.8);
+    }
+  }
+
+  async function runMullvad(){
+    elMullvad.innerHTML='';
+    mullvadEndpoints.forEach(h=>{ const id = `mv-${h.host.replace(/[^a-z0-9]/gi,'_')}`; elMullvad.appendChild(rowTemplate(id, h.name, h.host, 'Mullvad')); heatAdd('Mullvad', h.host, `${h.name}`); }); await sleep(60);
+    for(const h of mullvadEndpoints){ const id = `mv-${h.host.replace(/[^a-z0-9]/gi,'_')}`; const doh = await dohResolve(h.host); log('DoH (mullvad)', h.host, doh.ok?'OK':'FAIL', doh); let ping=null; if(doh.ok){ ping = await imagePing(`https://${h.host}/favicon.ico`); log('IMG (mullvad)', h.host, ping); }
+      if(!doh.ok){ setStatus(id,'bad','DNS failed'); heatSet('Mullvad', h.host, 'bad'); }
+      else if(ping && ping.ok){ setStatus(id,'ok', `${Math.round(ping.ms)} ms`); heatSet('Mullvad', h.host, 'ok'); }
+      else if(ping && !ping.ok){ setStatus(id,'bad','Network or blocked'); heatSet('Mullvad', h.host, 'bad'); }
+      else { setStatus(id,'warn','inconclusive'); heatSet('Mullvad', h.host, 'warn'); }
+      progBump(0.8);
+    }
+    const am = await fetchJSON('https://am.i.mullvad.net/json'); log('Mullvad JSON', am);
+    const rowId = `mv-${'am.i.mullvad.net'.replace(/[^a-z0-9]/gi,'_')}`;
+    if(am.ok){ const info = am.data; setStatus(rowId, 'ok', typeof info.mullvad!=='undefined' ? `mullvad=${info.mullvad}` : 'JSON ok'); state.mullvadJSON = info; }
+    else{ setStatus(rowId, 'warn', 'JSON blocked or CORS'); }
+    progBump(1.2);
+  }
+
+  async function runCircumvention(endpoints){
+    elCircum.innerHTML='';
+    endpoints.forEach(h=>{ const id = `circ-${h.host.replace(/[^a-z0-9]/gi,'_')}`; elCircum.appendChild(rowTemplate(id, h.name, h.host, 'Circumvention')); heatAdd('Circumvention', h.host, `${h.name}`); }); await sleep(60);
+    for(const h of endpoints){ const id = `circ-${h.host.replace(/[^a-z0-9]/gi,'_')}`; const doh = await dohResolve(h.host); log('DoH (circ)', h.host, doh.ok?'OK':'FAIL', doh); let ping=null; if(doh.ok){ ping = await imagePing(`https://${h.host}/favicon.ico`); log('IMG (circ)', h.host, ping); }
+      if(!doh.ok){ setStatus(id,'bad','DNS failed'); heatSet('Circumvention', h.host, 'bad'); }
+      else if(ping && ping.ok){ setStatus(id,'ok', `${Math.round(ping.ms)} ms`); heatSet('Circumvention', h.host, 'ok'); }
+      else if(ping && !ping.ok){ setStatus(id,'bad','Network or blocked'); heatSet('Circumvention', h.host, 'bad'); }
+      else { setStatus(id,'warn','inconclusive'); heatSet('Circumvention', h.host, 'warn'); }
+      progBump(0.8);
+    }
+  }
+
+  async function runKeywords(words){
+    elKW.innerHTML = '';
+    words.forEach(w=>{ const id = `kw-${w}`; elKW.appendChild(rowTemplate(id, `GET ?q=${w}`, 'httpbin.org', 'URL keyword')); heatAdd('Keywords', w, `?q=${w}`); }); await sleep(60);
+    for(const w of words){ const id = `kw-${w}`; const r = await keywordFilterProbe(w); log('Keyword probe', w, r);
+      if(r.ok){ setStatus(id,'ok', `${Math.round(r.ms)} ms`); heatSet('Keywords', w, 'ok'); }
+      else { setStatus(id,'bad','blocked or CORS'); heatSet('Keywords', w, 'bad'); }
+      progBump(0.6);
+    }
+  }
+
+  async function runIdentity(){
+    elId.innerHTML='';
+    const rows = [
+      {id:'ip4', label:'Public IPv4', small:'api.ipify.org'},
+      {id:'ip6', label:'Public IPv6', small:'api64.ipify.org'},
+      {id:'stunip', label:'STUN reflexive IP(s)', small:'WebRTC'},
+      {id:'orgasn', label:'Org / ASN (from Mullvad JSON if available)', small:'am.i.mullvad.net'},
+      {id:'mvstatus', label:'Mullvad status', small:'am.i.mullvad.net'},
+    ];
+    rows.forEach(r=>{ elId.appendChild(rowTemplate(r.id, r.label, r.small)); heatAdd('Identity', r.id, r.label); }); await sleep(40);
+    const v4 = await fetchJSON('https://api.ipify.org?format=json'); log('ipify v4', v4);
+    const v6 = await fetchJSON('https://api64.ipify.org?format=json'); log('ipify v6', v6);
+    if(v4.ok && v4.data && v4.data.ip){ setStatus('ip4','ok', v4.data.ip); heatSet('Identity','ip4','ok'); } else { setStatus('ip4','warn','n/a'); heatSet('Identity','ip4','warn'); }
+    if(v6.ok && v6.data && v6.data.ip){ setStatus('ip6','ok', v6.data.ip); heatSet('Identity','ip6','ok'); } else { setStatus('ip6','warn','n/a'); heatSet('Identity','ip6','warn'); }
+    if(state.stunIPs && state.stunIPs.length){ setStatus('stunip','ok', state.stunIPs.join(', ')); heatSet('Identity','stunip','ok'); } else { setStatus('stunip','warn','no srflx IPs'); heatSet('Identity','stunip','warn'); }
+    if(state.mullvadJSON){ const J = state.mullvadJSON; const org = (J.organization || J.asn || J.asn_name || '').toString() || 'n/a'; setStatus('orgasn','ok', org); heatSet('Identity','orgasn','ok'); if(typeof J.mullvad !== 'undefined'){ setStatus('mvstatus','ok', `mullvad=${J.mullvad}`); heatSet('Identity','mvstatus','ok'); } else { setStatus('mvstatus','warn','n/a'); heatSet('Identity','mvstatus','warn'); } }
+    else { setStatus('orgasn','warn','n/a'); setStatus('mvstatus','warn','n/a'); heatSet('Identity','orgasn','warn'); heatSet('Identity','mvstatus','warn'); }
+    progBump(1.2);
+  }
+
+  async function runSpeed(){
+    elSpeed.innerHTML='';
+    const rows = [
+      {id:'spd-ping', label:'Ping (RTT avg)', small:'WebSocket echo'},
+      {id:'spd-jitter', label:'Jitter (std dev)', small:'WebSocket echo'},
+      {id:'spd-down', label:'Throughput (down)', small:'approx, 10s window'},
+      {id:'spd-up', label:'Throughput (up)', small:'approx, 10s window'},
+    ]; rows.forEach(r=>elSpeed.appendChild(rowTemplate(r.id, r.label, r.small))); await sleep(30);
+    const r = await speedTestWS({durationMs:10000, frameBytes:32768}); log('SpeedTest', r);
+    if(!r.ok){ setStatus('spd-ping','warn','inconclusive'); setStatus('spd-jitter','warn','—'); setStatus('spd-down','warn','—'); setStatus('spd-up','warn','—'); }
+    else { setStatus('spd-ping','ok', (r.rttMs!=null?`${r.rttMs} ms`:'—')); setStatus('spd-jitter','ok', (r.jitterMs!=null?`${r.jitterMs} ms`:'—')); const mbpsDown = (r.bytesDown*8/1e6)/r.duration; const mbpsUp   = (r.bytesUp*8/1e6)/r.duration; setStatus('spd-down','ok', `${mbpsDown.toFixed(2)} Mbps`); setStatus('spd-up','ok', `${mbpsUp.toFixed(2)} Mbps`); }
+    progBump(5.0); // heavy weight for 10s test
+  }
+
+  // ---------- Snapshot/export ----------
+  function snapshotReport(){
+    const getGroup = (rootSel) => { const root = document.querySelector(rootSel); const rows = root ? root.querySelectorAll('.row') : []; const out = []; rows.forEach(r=>{ const name = r.querySelector('.name')?.textContent.trim(); const host = r.querySelector('.small')?.textContent.trim(); const status = r.querySelector('.status')?.textContent.trim(); out.push({name, host, status}); }); return out; };
+    return {
+      ranAt: new Date().toISOString(),
+      connectivity: getGroup('#connectivity'),
+      identity: getGroup('#identity'),
+      categories: getGroup('#categories'),
+      vpn: getGroup('#vpn'),
+      mullvad: getGroup('#mullvad'),
+      circumvention: getGroup('#circum'),
+      keywords: getGroup('#keywords'),
+      speed: getGroup('#speed'),
+      userAgent: navigator.userAgent,
+      cfTrace: state.cfTrace || null,
+      stunIPs: state.stunIPs || null,
+      mullvadJSON: state.mullvadJSON || null
+    };
+  }
+
+  // ---------- Wiring ----------
+  $('#runDeep').addEventListener('click', runDeep);
+  $('#runSpeed').addEventListener('click', runSpeed);
+  $('#addHost').addEventListener('click', ()=>{ const host = ($('#customHost').value||'').trim().replace(/^https?:\/\//,'').replace(/\/.*$/,''); if(!host) return; if(!/^[a-z0-9.-]+$/i.test(host)){ alert('Please enter a valid hostname'); return; } state.addedHosts.push({name:host, host, cat:'Custom'}); $('#customHost').value = ''; runCategories(categoryHosts.concat(state.addedHosts)); });
+  $('#export').addEventListener('click', ()=>{ const report = snapshotReport(); const blob = new Blob([JSON.stringify(report,null,2)], {type:'application/json'}); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `firewall-dpi-report-${Date.now()}.json`; a.click(); URL.revokeObjectURL(a.href); });
+  $('#copyLog').addEventListener('click', async ()=>{ try{ await navigator.clipboard.writeText(elLog.textContent); log('Log copied to clipboard.'); alert('Copied!'); } catch{ alert('Could not copy. Select the text and copy manually.'); } });
+
+  async function runDeep(){
+    // Reset heatmap + progress
+    elHeat.innerHTML=''; heat.cells={}; heat.order=[];
+    const totalWeight = 1.2+1.0+1.4+1.0 // connectivity
+      + (categoryHosts.length*0.8) + (vpnHosts.length*0.8) + (mullvadEndpoints.length*0.8 + 1.2) + (circumEndpoints.length*0.8)
+      + (keywordList.length*0.6) + 1.2 // identity
+      + 5.0; // speed
+    progReset(totalWeight);
+
+    elLog.textContent = ''; log('Starting DEEP run…');
+    await runConnectivity();
+    await runCategories(categoryHosts.concat(state.addedHosts));
+    await runVPN(vpnHosts);
+    await runMullvad();
+    await runCircumvention(circumEndpoints);
+    await runKeywords(keywordList);
+    await runIdentity();
+    await runSpeed();
+    log('Deep run complete.');
+  }
+
+  // Auto-run deep on load
+  (async function autorun(){ await sleep(350); await runDeep(); })();
+
+})();
+</script>
+</body>
+</html>
